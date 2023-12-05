@@ -10,12 +10,19 @@
 #include <QJsonValue>
 #include <QVariant>
 #include <QJsonArray>
+#include <QNetworkRequest>
+#include <QUrlQuery>
+#include <QStringList>
+#include <QStringListModel>
+#include <QListView>
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
 
     // Assuming you have a QTableWidget named "tableWidget" in your UI
     ui->tableWidget->setColumnCount(1);  // Set the number of columns
@@ -37,6 +44,7 @@ MainWindow::~MainWindow()
 {
     delete ui;
 }
+
 
 void MainWindow::on_searchButton_clicked()
 {
@@ -70,6 +78,8 @@ void MainWindow::onTableItemClicked(QTableWidgetItem *item)
         qDebug() << "Selected City: " << selectedCity;
         getWeather(selectedCity);
         getRainForecast(selectedCity);
+
+
     }
 }
 
@@ -102,7 +112,10 @@ void MainWindow::getWeather(const QString &city)
 
             // Extract the temperature information (you can extract more data as needed)
             QJsonValue main = jsonObject.value("main");
+            QJsonValue lonlet = jsonObject.value("coord");
             QJsonValue temperature = main.toObject().value("temp");
+
+            getForecast(lonlet.toObject().value("let").toDouble(),lonlet.toObject().value("lon").toDouble());
 
             QJsonValue weather = jsonObject.value("weather").toArray().at(0).toObject();
             QJsonValue feelLike = main.toObject().value("feels_like");
@@ -138,6 +151,151 @@ void MainWindow::getWeather(const QString &city)
     // Send the HTTP request
     networkManager->get(QNetworkRequest(QUrl(apiUrl)));
 }
+
+
+// Custom slot to handle item clicks
+void MainWindow::onListItemClicked(const QJsonDocument &jsonData, const QString &selectedItem, int itemIndex)
+{
+
+
+    QJsonArray times = jsonData["daily"].toObject()["time"].toArray();
+    QJsonArray temperatureMax = jsonData["daily"].toObject()["temperature_2m_max"].toArray();
+    QJsonArray temperatureMin = jsonData["daily"].toObject()["temperature_2m_min"].toArray();
+    QJsonArray sunrise = jsonData["daily"].toObject()["sunrise"].toArray();
+    QJsonArray sunset = jsonData["daily"].toObject()["sunset"].toArray();
+    QJsonArray precipitation = jsonData["daily"].toObject()["precipitation"].toArray();
+
+    QJsonArray windspeedMax = jsonData["daily"].toObject()["windspeed_10m_max"].toArray();
+    QJsonArray UV = jsonData["daily"].toObject()["uv_index_max"].toArray();
+
+    QString temperatureMaxStr = QString("Max %1°C").arg(temperatureMax[itemIndex].toDouble());
+    ui->futureMax->setText(temperatureMaxStr);
+
+    QString temperatureMinStr = QString("Min %1°C").arg(temperatureMin[itemIndex].toDouble());
+    ui->futureMin->setText(temperatureMinStr);
+
+
+    QString temperatureSunriseStr = QString("Sunrise %1").arg(sunrise[itemIndex].toString());
+    ui->futureRise->setText(temperatureSunriseStr);
+
+
+    QString temperatureSunsetStr = QString("Sunset %1").arg(sunset[itemIndex].toString());
+    ui->futureSet->setText(temperatureSunsetStr);
+
+
+
+    // QString temperaturePrecipitationStr = QString("Rain %1mm").arg(precipitation[itemIndex].toString());
+    // ui->futureRain->setText(temperatureSunsetStr);
+
+
+    QString temperatureWindStr = QString("Wind %1kmh").arg(windspeedMax[itemIndex].toDouble());
+    ui->futureWind->setText(temperatureWindStr);
+
+
+    QString UVStr = QString("UV %1kmh").arg(UV[itemIndex].toDouble());
+    ui->futureUV->setText(UVStr);
+
+    // Implement your logic here based on the clicked item
+    qDebug() << "Clicked on item:" << UV[itemIndex];
+}
+
+
+void MainWindow::getForecast(double latitude, double longitude)
+{
+    // Construct the URL with the query parameters
+    QUrl url("https://api.open-meteo.com/v1/forecast");
+    QUrlQuery query;
+    query.addQueryItem("latitude", QString::number(latitude));
+    query.addQueryItem("longitude", QString::number(longitude));
+    query.addQueryItem("hourly", "temperature_2m,relativehumidity_2m,apparent_temperature,precipitation,rain,weathercode,surface_pressure,visibility,evapotranspiration,windspeed_10m,winddirection_10m,windgusts_10m,cloudcover,uv_index,dewpoint_2m,precipitation_probability,shortwave_radiation");
+    query.addQueryItem("daily", "weathercode,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,sunrise,sunset,precipitation_sum,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,uv_index_max,rain_sum,winddirection_10m_dominant");
+    query.addQueryItem("forecast_days", "15");
+    query.addQueryItem("timezone", "auto");
+    url.setQuery(query);
+
+    // Create a network request
+    QNetworkRequest request(url);
+
+    url.setQuery(query);
+
+    // Send the request
+    // manager->get(request);
+    QNetworkAccessManager *networkManager = new QNetworkAccessManager(this);
+
+
+    // Connect the finished signal to a lambda function to handle the response
+    connect(networkManager, &QNetworkAccessManager::finished, [=](QNetworkReply *reply) {
+        if (reply->error() == QNetworkReply::NoError) {
+            // Parse the JSON response
+            QJsonDocument jsonResponse = QJsonDocument::fromJson(reply->readAll());
+
+            if (!jsonResponse.isNull() && jsonResponse.isObject())
+            {
+                // Get the root object
+                QJsonObject root = jsonResponse.object();
+
+                // Get the timezone
+                QString timezone = root["timezone"].toString();
+
+                // Get the hourly data
+                QJsonObject hourly = root["hourly"].toObject();
+
+                QJsonArray times = root["daily"].toObject()["time"].toArray();
+
+                // have a list view name futurePredict add time from the array to list
+
+                // Create a QStringList to store time values
+                QStringList timeList;
+
+                // Iterate through the time array and add each time value to the list
+                for (const QJsonValue &time : times) {
+
+                    timeList.append(QString("Date: %1").arg(time.toString()));
+                }
+
+                // Create a QStringListModel and set it to the QListView
+                QStringListModel *model = new QStringListModel(timeList);
+                ui->futurePredict->setModel(model);
+
+
+
+                // Connect the clicked signal to a lambda function
+                connect(ui->futurePredict, &QListView::clicked, [=](const QModelIndex &index) {
+                    // Retrieve the clicked item text
+                    QString selectedItem = index.data().toString();
+                    int itemIndex = index.row();
+
+                    // Pass the selected item to a custom function
+                    onListItemClicked(jsonResponse,selectedItem,itemIndex);
+                });
+
+
+                // ui->futurePredict->
+                // Get the temperature array
+                QJsonArray temperature = hourly["temperature_2m"].toArray();
+
+                // Get the first temperature value
+                double temp = temperature[0].toDouble();
+
+                // Print the temperature and timezone
+                qDebug() << "The temperature at" << timezone << "is" << temp << "degrees";
+
+            }
+        } else {
+            // Handle the error
+            qDebug() << "Error: " << reply->errorString();
+
+            // Clean up
+            reply->deleteLater();
+            networkManager->deleteLater();
+        }
+    });
+
+
+    // Send the HTTP request
+    networkManager->get(QNetworkRequest(QUrl(url)));
+}
+
 
 
 void MainWindow::getRainForecast(const QString &city)
@@ -181,7 +339,8 @@ void MainWindow::getRainForecast(const QString &city)
                 QDateTime currentTime = QDateTime::currentDateTime();
                 if (forecastTime > currentTime && forecastTime <= currentTime.addSecs(3 * 60 * 60)) {
                     // Display the rain information (you can update this part based on your UI)
-                    qDebug() << "Rain forecast for " << city << " in the next 3 hours: " << rainVolume << " mm";
+                    // qDebug() << "Rain forecast for " << city << " in the next 3 hours: " << rainVolume << " mm";
+                    ui->forecastText->setText(QString("Rain forecast for in next 3 hours: %1 mm").arg(rainVolume));
                 }
             }
 

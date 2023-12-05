@@ -25,6 +25,8 @@ private slots:
     void getWeather(const QString &citys);
     void getRainForecast(const QString &citys);
     void getCurrentLocation();
+    void getForecast(double latitude, double longitude);
+    void onListItemClicked(const QJsonDocument &jsonData, const QString &selectedItem, int itemIndex);
 
 
 private:
